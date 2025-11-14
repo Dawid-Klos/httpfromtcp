@@ -1,11 +1,19 @@
+// Package request parses HTTP/1.1 requests from a stream.
+//
+// It reads and validates the request line, then incrementally parses header
+// fields until the request is complete. The parser is stateful and supports
+// partial reads from the provided io.Reader.
 package request
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"unicode"
+
+	"github.com/Dawid-Klos/httpfromtcp/internal/headers"
 )
 
 type RequestLine struct {
@@ -16,15 +24,17 @@ type RequestLine struct {
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       parserState
 }
 
 type parserState string
 
 const (
-	Init  parserState = "init"
-	Done  parserState = "done"
-	Error parserState = "error"
+	requestStateInit           parserState = "init"
+	requestStateParsingHeaders parserState = "parsing headers"
+	requestStateDone           parserState = "done"
+	requestStateError          parserState = "error"
 )
 
 var CRLF = []byte("\r\n")
@@ -35,40 +45,13 @@ var ErrMalformedRequestLine = errors.New("malformed request line")
 var ErrMalformedMethod = errors.New("malformed method in request line")
 var ErrMalformedVersion = errors.New("malformed version in request line")
 var ErrMalformedTarget = errors.New("malformed target in request line")
-
-func (r *Request) parse(data []byte) (int, error) {
-	read := 0
-outer:
-	for {
-		switch r.state {
-		case Error:
-			return 0, ErrRequestInErrorState
-		case Init:
-			rl, n, err := parseRequestLine(data[read:])
-			if err != nil {
-				return 0, err
-			}
-			if n == 0 {
-				break outer
-			}
-			r.RequestLine = *rl
-			read += n
-			r.state = Done
-		case Done:
-			break outer
-		}
-	}
-
-	return read, nil
-}
-
-func (r *Request) done() bool {
-	return r.state == Done || r.state == Error
-}
+var ErrReadingDataInDoneState = errors.New("trying to read data in done state")
+var ErrUnknownRequestState = errors.New("unknown request state")
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := &Request{
-		state: Init,
+		state:   requestStateInit,
+		Headers: headers.NewHeaders(),
 	}
 
 	buf := make([]byte, 512)
@@ -77,7 +60,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[bufIdx:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				request.state = Done
+				if request.state != requestStateDone {
+					return nil, fmt.Errorf("incomplete request, in state: %s, read n bytes on EOF: %d", request.state, bufIdx)
+				}
+				//request.state = requestStateDone
 				break
 			}
 			return nil, err
@@ -106,7 +92,7 @@ func parseRequestLine(data []byte) (*RequestLine, int, error) {
 	read := idx + len(CRLF)
 	requestLine, err := requestLineFromString(requestLineText)
 	if err != nil {
-		return nil, len(requestLineText), err
+		return nil, idx + 2, err
 	}
 
 	return requestLine, read, nil
@@ -155,4 +141,56 @@ func requestLineFromString(str string) (*RequestLine, error) {
 		Target:      target,
 		Method:      method,
 	}, nil
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	totalParsedBytes := 0
+	for r.state != requestStateDone {
+		n, err := r.parseSingle(data[totalParsedBytes:])
+		if err != nil {
+			return 0, err
+		}
+		totalParsedBytes += n
+		if n == 0 {
+			//r.state = requestStateDone
+			break
+		}
+	}
+
+	return totalParsedBytes, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
+	switch r.state {
+	case requestStateInit:
+		rl, n, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		r.RequestLine = *rl
+		r.state = requestStateParsingHeaders
+		return n, nil
+	case requestStateParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.state = requestStateDone
+		}
+		return n, nil
+	case requestStateDone:
+		return 0, ErrRequestInErrorState
+	case requestStateError:
+		return 0, ErrRequestInErrorState
+	default:
+		return 0, ErrUnknownRequestState
+	}
+}
+
+func (r *Request) done() bool {
+	return r.state == requestStateDone || r.state == requestStateError
 }
