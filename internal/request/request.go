@@ -63,7 +63,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 				if request.state != requestStateDone {
 					return nil, fmt.Errorf("incomplete request, in state: %s, read n bytes on EOF: %d", request.state, bufIdx)
 				}
-				//request.state = requestStateDone
 				break
 			}
 			return nil, err
@@ -152,7 +151,6 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 		totalParsedBytes += n
 		if n == 0 {
-			//r.state = requestStateDone
 			break
 		}
 	}
