@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -25,6 +26,7 @@ type RequestLine struct {
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	state       parserState
 }
 
@@ -33,20 +35,23 @@ type parserState string
 const (
 	requestStateInit           parserState = "init"
 	requestStateParsingHeaders parserState = "parsing headers"
+	requestStateParsingBody    parserState = "parsingBody"
 	requestStateDone           parserState = "done"
-	requestStateError          parserState = "error"
 )
 
 var CRLF = []byte("\r\n")
 
-var ErrRequestInErrorState = errors.New("request in error state")
+var ErrReadingDataInDoneState = errors.New("trying to read data in done state")
+var ErrUnknownRequestState = errors.New("unknown request state")
+
 var ErrUnsuppportedHTTPVersion = errors.New("unsupported HTTP version")
 var ErrMalformedRequestLine = errors.New("malformed request line")
 var ErrMalformedMethod = errors.New("malformed method in request line")
 var ErrMalformedVersion = errors.New("malformed version in request line")
 var ErrMalformedTarget = errors.New("malformed target in request line")
-var ErrReadingDataInDoneState = errors.New("trying to read data in done state")
-var ErrUnknownRequestState = errors.New("unknown request state")
+
+var ErrMalformedContentLength = errors.New("malformed Content-Length")
+var ErrBodyOverflow = errors.New("body exceeds Content-Length")
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := &Request{
@@ -63,7 +68,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 				if request.state != requestStateDone {
 					return nil, fmt.Errorf("incomplete request, in state: %s, read n bytes on EOF: %d", request.state, bufIdx)
 				}
-				break
 			}
 			return nil, err
 		}
@@ -177,18 +181,46 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = requestStateDone
+			r.state = requestStateParsingBody
 		}
 		return n, nil
+	case requestStateParsingBody:
+		lengthStr, err := r.Headers.Get("Content-Length")
+		if err != nil {
+			if errors.Is(err, headers.ErrFieldNameNotFound) {
+				r.state = requestStateDone
+				return 0, nil
+			}
+			return 0, err
+		}
+		contentLen, err := strconv.Atoi(lengthStr)
+		if err != nil {
+			return 0, ErrMalformedContentLength
+		}
+
+		if contentLen == 0 {
+			r.state = requestStateDone
+		}
+		if len(data) < contentLen {
+			return 0, nil
+		}
+		if len(data) > contentLen {
+			return 0, ErrBodyOverflow
+		}
+
+		r.Body = append(r.Body, data...)
+		if len(r.Body) == contentLen {
+			r.state = requestStateDone
+		}
+
+		return len(data), nil
 	case requestStateDone:
-		return 0, ErrRequestInErrorState
-	case requestStateError:
-		return 0, ErrRequestInErrorState
+		return 0, ErrReadingDataInDoneState
 	default:
 		return 0, ErrUnknownRequestState
 	}
 }
 
 func (r *Request) done() bool {
-	return r.state == requestStateDone || r.state == requestStateError
+	return r.state == requestStateDone
 }
