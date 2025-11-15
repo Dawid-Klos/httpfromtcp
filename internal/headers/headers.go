@@ -27,6 +27,7 @@ var WHITESPACE = []byte(" ")
 
 var ErrMalformedFieldName = errors.New("malformed field-name")
 var ErrMalformedFieldValue = errors.New("malformed field-value")
+var ErrFieldNameNotFound = errors.New("field-name not found")
 
 func init() {
 	for c := 'a'; c <= 'z'; c++ {
@@ -43,13 +44,22 @@ func init() {
 	}
 }
 
+func (h Headers) Get(str string) (string, error) {
+	key := bytes.ToLower([]byte(str))
+	value, ok := h[string(key)]
+	if !ok {
+		return "", ErrFieldNameNotFound
+	}
+	return value, nil
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	crlfIdx := bytes.Index(data, CRLF)
 	if crlfIdx == -1 {
 		return 0, false, nil
 	}
 	if crlfIdx == 0 {
-		return 0, true, nil
+		return 2, true, nil
 	}
 
 	header := data[:crlfIdx]
