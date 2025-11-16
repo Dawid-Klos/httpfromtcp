@@ -47,23 +47,23 @@ tidy:
 ## build: build the cmd/api application
 .PHONY: build
 build:
-	go build -o=/tmp/bin/api ./cmd/api
+	go build -o=/tmp/bin/httpserver ./cmd/httpserver
 
 ## build-debug: build the cmd/api application for debugging with additional flags
 .PHONY: build-debug
 build-debug:
-	go build -gcflags=all="-N -l" -o /tmp/bin/api ./cmd/api
+	go build -gcflags=all="-N -l" -o /tmp/bin/httpserver ./cmd/httpserver
 
 ## run: run the cmd/api application
 .PHONY: run
 run: build
-	/tmp/bin/api
+	/tmp/bin/httpserver
 
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
 run/live:
 	go run github.com/cosmtrek/air@v1.43.0 \
-		--build.cmd "make build" --build.bin "/tmp/bin/api" --build.delay "100" \
+		--build.cmd "make build" --build.bin "/tmp/bin/httpserver" --build.delay "100" \
 		--build.exclude_dir "" \
 		--build.include_ext "go, tpl, tmpl, html, css, scss, js, ts, sql, jpeg, jpg, gif, png, bmp, svg, webp, ico" \
 		--misc.clean_on_exit "true"
