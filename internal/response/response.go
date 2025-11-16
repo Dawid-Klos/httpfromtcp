@@ -1,8 +1,7 @@
-// Package response parses HTTP/1.1 requests from a stream.
+// Package response helps to create HTTP/1.1 responses.
 //
-// It reads and validates the request line, then incrementally parses header
-// fields until the request is complete. The parser is stateful and supports
-// partial reads from the provided io.Reader.
+// It includes helpers for writing status line, getting default headers and
+// writing headers into the HTTP response.
 package response
 
 import (
