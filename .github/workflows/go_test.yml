@@ -22,7 +22,7 @@ jobs:
           cache-dependency-path: server/go.sum
 
       - name: Install Go tools
-        run: go install gotest.tools/gotestsum@v1.12.1
+        run: go install gotest.tools/gotestsum@v1.13.0
 
       - name: Verify dependencies
         run: go mod verify
