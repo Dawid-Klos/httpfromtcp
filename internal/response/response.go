@@ -14,22 +14,23 @@ import (
 type StatusCode int
 
 const (
-	OK                  StatusCode = 200
-	BadRequest          StatusCode = 400
-	InternalServerError StatusCode = 500
+	StatusOK                  StatusCode = 200
+	StatusBadRequest          StatusCode = 400
+	StatusInternalServerError StatusCode = 500
 )
 
 func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 	var reason string
 	switch statusCode {
-	case OK:
-		reason = "OK"
-	case BadRequest:
+	case StatusOK:
+		reason = "StatusOK"
+	case StatusBadRequest:
 		reason = "Bad Request"
-	case InternalServerError:
+	case StatusInternalServerError:
 		reason = "Internal Server Error"
 	}
-	statusLine := "HTTP/1.1" + " " + strconv.Itoa(int(statusCode)) + " " + reason
+
+	statusLine := "HTTP/1.1" + " " + strconv.Itoa(int(statusCode)) + " " + reason + "\r\n"
 	if _, err := w.Write([]byte(statusLine)); err != nil {
 		return err
 	}
